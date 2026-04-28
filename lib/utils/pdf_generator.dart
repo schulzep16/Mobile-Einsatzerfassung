@@ -1,4 +1,5 @@
 // lib/utils/pdf_generator.dart
+import 'dart:convert';
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
@@ -399,43 +400,129 @@ class PdfGenerator {
             ]),
 
           // ── Material & Verbrauch ─────────────────────────────────────────────
-          section('Material & Verbrauch', [
-            pw.Row(children: [
-              pw.Expanded(child: row('Wasserentnahme', e.wasserentnahme)),
-              pw.Expanded(child: row('Schaum', '${e.schaumBildner} ${e.schaumMenge > 0 ? "${e.schaumMenge} kg" : ""}'.trim())),
-            ]),
-            pw.Row(children: [
-              pw.Expanded(child: row('Schaum in Liter ca.', e.schaumLiterCa > 0 ? '${e.schaumLiterCa}' : '')),
-              pw.Expanded(child: row('Löschmittelauswurfgeräte C', e.loeschmittelAuswurfgeraetC > 0 ? '${e.loeschmittelAuswurfgeraetC}' : '')),
-              pw.Expanded(child: row('Löschmittelauswurfgeräte B', e.loeschmittelAuswurfgeraetB > 0 ? '${e.loeschmittelAuswurfgeraetB}' : '')),
-            ]),
-            pw.Row(children: [
-              pw.Expanded(child: row('PA 200 bar', e.atemschutzPa200 > 0 ? '${e.atemschutzPa200}' : '')),
-              pw.Expanded(child: row('PA 300 bar', e.atemschutzPa300 > 0 ? '${e.atemschutzPa300}' : '')),
-              pw.Expanded(child: row('Reserve Aufgabenträger', e.atemschutzReserveAufgabentraeger > 0 ? '${e.atemschutzReserveAufgabentraeger}' : '')),
-            ]),
-            pw.Row(children: [
-              pw.Expanded(child: row('Reserve FTZ', e.atemschutzReserveFtz > 0 ? '${e.atemschutzReserveFtz}' : '')),
-              pw.Expanded(child: row('Reserve gesamt', e.atemschutzReserve > 0 ? '${e.atemschutzReserve}' : '')),
-              pw.Expanded(child: row('', '')),
-            ]),
-            pw.Row(children: [
-              pw.Expanded(child: row('Ölbinder Land', e.oelbinderLand > 0 ? '${e.oelbinderLand} kg' : '')),
-              pw.Expanded(child: row('Ölbinder Wasser', e.oelbinderWasser > 0 ? '${e.oelbinderWasser} kg' : '')),
-            ]),
-            if (e.oelbinderLandTyp.isNotEmpty) row('Ölbinder Land Typ', e.oelbinderLandTyp),
-            if (e.oelbinderLandEntsorgungMit || e.oelbinderLandEntsorgungOhne)
-              row('Ölbinder Land Entsorgung', e.oelbinderLandEntsorgungMit ? 'mit' : 'ohne'),
-            if (e.oelbinderWasserTyp.isNotEmpty) row('Ölbinder Wasser Typ', e.oelbinderWasserTyp),
-            if (e.oelbinderWasserEntsorgungMit || e.oelbinderWasserEntsorgungOhne)
-              row('Ölbinder Wasser Entsorgung', e.oelbinderWasserEntsorgungMit ? 'mit' : 'ohne'),
-            if (e.oelbinderEntsorgung.isNotEmpty) row('Entsorgung (Legacy)', e.oelbinderEntsorgung),
-            if (e.handfeuerloecherTyp.isNotEmpty) row('Handfeuerlöscher Typ', e.handfeuerloecherTyp),
-            if (e.handfeuerloecher > 0) row('Handfeuerlöscher', '${e.handfeuerloecher}'),
-            if (e.handfeuerloecherEntsorgungMit || e.handfeuerloecherEntsorgungOhne)
-              row('Handfeuerlöscher Entsorgung', e.handfeuerloecherEntsorgungMit ? 'mit' : 'ohne'),
-            if (e.besondereGeraete.isNotEmpty) row('Besondere Geräte', e.besondereGeraete),
-          ]),
+          () {
+            // Helper: eine Zelle mit Label oben und Wert unten
+            pw.Widget cell(String label, String value) {
+              if (value.isEmpty || value == '0') {
+                return pw.Padding(
+                  padding: const pw.EdgeInsets.all(3),
+                  child: pw.SizedBox(),
+                );
+              }
+              return pw.Padding(
+                padding: const pw.EdgeInsets.symmetric(horizontal: 4, vertical: 3),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(label,
+                        style: const pw.TextStyle(
+                            fontSize: 7.5, color: PdfColors.grey700)),
+                    pw.SizedBox(height: 1),
+                    pw.Text(value,
+                        style: const pw.TextStyle(fontSize: 8.5)),
+                  ],
+                ),
+              );
+            }
+
+            pw.Widget tableRow(List<pw.Widget> cells) {
+              return pw.Table(
+                border: pw.TableBorder.symmetric(
+                  inside: pw.BorderSide(color: borderColor, width: 0.3),
+                ),
+                columnWidths: {
+                  for (int i = 0; i < cells.length; i++)
+                    i: const pw.FlexColumnWidth(1),
+                },
+                children: [pw.TableRow(children: cells)],
+              );
+            }
+
+            final schaumVal = [
+              if (e.schaumBildner.isNotEmpty) e.schaumBildner,
+              if (e.schaumMenge > 0) '${e.schaumMenge} kg',
+            ].join(' ');
+
+            return section('Material & Verbrauch', [
+              // Zeile 1 – Wasser / Schaum
+              tableRow([
+                cell('Wasserentnahme', e.wasserentnahme),
+                cell('Schaum', schaumVal),
+                cell('Schaum in Liter ca.',
+                    e.schaumLiterCa > 0 ? '${e.schaumLiterCa}' : ''),
+              ]),
+              // Zeile 2 – Löschmittelauswurfgeräte
+              tableRow([
+                cell('Löschmittelauswurfgeräte C',
+                    e.loeschmittelAuswurfgeraetC > 0
+                        ? '${e.loeschmittelAuswurfgeraetC}'
+                        : ''),
+                cell('Löschmittelauswurfgeräte B',
+                    e.loeschmittelAuswurfgeraetB > 0
+                        ? '${e.loeschmittelAuswurfgeraetB}'
+                        : ''),
+                cell('', ''),
+              ]),
+              // Zeile 3 – Atemschutz-PA
+              tableRow([
+                cell('PA 200 bar',
+                    e.atemschutzPa200 > 0 ? '${e.atemschutzPa200}' : ''),
+                cell('PA 300 bar',
+                    e.atemschutzPa300 > 0 ? '${e.atemschutzPa300}' : ''),
+                cell('Reserve Aufgabenträger',
+                    e.atemschutzReserveAufgabentraeger > 0
+                        ? '${e.atemschutzReserveAufgabentraeger}'
+                        : ''),
+              ]),
+              // Zeile 4 – Atemschutz-Reserve
+              tableRow([
+                cell('Reserve FTZ',
+                    e.atemschutzReserveFtz > 0
+                        ? '${e.atemschutzReserveFtz}'
+                        : ''),
+                cell('Reserve gesamt',
+                    e.atemschutzReserve > 0 ? '${e.atemschutzReserve}' : ''),
+                cell('', ''),
+              ]),
+              // Zeile 5 – Ölbinder
+              tableRow([
+                cell('Ölbinder Land',
+                    e.oelbinderLand > 0 ? '${e.oelbinderLand} kg' : ''),
+                cell('Ölbinder Land Typ', e.oelbinderLandTyp),
+                cell(
+                    'Ölbinder Land Entsorgung',
+                    (e.oelbinderLandEntsorgungMit ||
+                            e.oelbinderLandEntsorgungOhne)
+                        ? (e.oelbinderLandEntsorgungMit ? 'mit' : 'ohne')
+                        : ''),
+              ]),
+              tableRow([
+                cell('Ölbinder Wasser',
+                    e.oelbinderWasser > 0 ? '${e.oelbinderWasser} kg' : ''),
+                cell('Ölbinder Wasser Typ', e.oelbinderWasserTyp),
+                cell(
+                    'Ölbinder Wasser Entsorgung',
+                    (e.oelbinderWasserEntsorgungMit ||
+                            e.oelbinderWasserEntsorgungOhne)
+                        ? (e.oelbinderWasserEntsorgungMit ? 'mit' : 'ohne')
+                        : ''),
+              ]),
+              // Zeile 6 – Handfeuerlöscher
+              tableRow([
+                cell('Handfeuerlöscher Typ', e.handfeuerloecherTyp),
+                cell('Handfeuerlöscher',
+                    e.handfeuerloecher > 0 ? '${e.handfeuerloecher}' : ''),
+                cell(
+                    'Handfeuerlöscher Entsorgung',
+                    (e.handfeuerloecherEntsorgungMit ||
+                            e.handfeuerloecherEntsorgungOhne)
+                        ? (e.handfeuerloecherEntsorgungMit ? 'mit' : 'ohne')
+                        : ''),
+              ]),
+              if (e.besondereGeraete.isNotEmpty)
+                row('Besondere Geräte', e.besondereGeraete),
+            ]);
+          }(),
 
           // ── Nachbereitung ────────────────────────────────────────────────────
           section('Nachbereitung', [
@@ -465,37 +552,52 @@ class PdfGenerator {
 
           // ── Unterschrift ─────────────────────────────────────────────────────
           pw.SizedBox(height: 20),
-          pw.Row(
-            mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
-            crossAxisAlignment: pw.CrossAxisAlignment.end,
-            children: [
-              pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.Text(
-                    '${e.ortBericht}, ${e.datumBericht}',
-                    style: const pw.TextStyle(fontSize: 9),
-                  ),
-                  pw.SizedBox(height: 20),
-                  pw.Container(width: 200, height: 0.5, color: PdfColors.black),
-                  pw.SizedBox(height: 2),
-                  pw.Text('Ort, Datum', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
-                ],
-              ),
-              pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  pw.SizedBox(height: 20),
-                  pw.Container(width: 200, height: 0.5, color: PdfColors.black),
-                  pw.SizedBox(height: 2),
-                  pw.Text(
-                    'Unterschrift (${e.unterschrift})',
-                    style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
-                  ),
-                ],
-              ),
-            ],
-          ),
+          () {
+            pw.Widget? sigImage;
+            try {
+              if (e.unterschrift.isNotEmpty) {
+                final bytes = base64Decode(e.unterschrift);
+                sigImage = pw.Image(
+                  pw.MemoryImage(bytes),
+                  width: 200,
+                  height: 60,
+                  fit: pw.BoxFit.contain,
+                );
+              }
+            } catch (_) {}
+            return pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: pw.CrossAxisAlignment.end,
+              children: [
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    pw.Text(
+                      '${e.ortBericht}, ${e.datumBericht}',
+                      style: const pw.TextStyle(fontSize: 9),
+                    ),
+                    pw.SizedBox(height: 20),
+                    pw.Container(width: 200, height: 0.5, color: PdfColors.black),
+                    pw.SizedBox(height: 2),
+                    pw.Text('Ort, Datum', style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700)),
+                  ],
+                ),
+                pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    ?sigImage,
+                    if (sigImage == null) pw.SizedBox(height: 20),
+                    pw.Container(width: 200, height: 0.5, color: PdfColors.black),
+                    pw.SizedBox(height: 2),
+                    pw.Text(
+                      'Unterschrift (Einsatzleiter)',
+                      style: const pw.TextStyle(fontSize: 8, color: PdfColors.grey700),
+                    ),
+                  ],
+                ),
+              ],
+            );
+          }(),
         ],
       ),
     );

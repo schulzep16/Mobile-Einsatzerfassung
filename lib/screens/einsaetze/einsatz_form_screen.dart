@@ -1,7 +1,9 @@
 // lib/screens/einsaetze/einsatz_form_screen.dart
 // ignore_for_file: use_build_context_synchronously
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:signature/signature.dart';
 import '../../providers/app_provider.dart';
 import '../../models/einsatz.dart';
 import '../../utils/constants.dart';
@@ -119,7 +121,7 @@ class _EinsatzFormScreenState extends State<EinsatzFormScreen>
   late TextEditingController _bemerkungCtrl;
   late TextEditingController _ortBerichtCtrl;
   late TextEditingController _datumBerichtCtrl;
-  late TextEditingController _unterschriftCtrl;
+  String _unterschriftBase64 = '';
 
   @override
   void initState() {
@@ -142,6 +144,8 @@ class _EinsatzFormScreenState extends State<EinsatzFormScreen>
     _alarmzeitCtrl = TextEditingController(text: e?.alarmzeit ?? '');
     _einsatzBeginnCtrl = TextEditingController(text: e?.einsatzBeginn ?? '');
     _einsatzEndeCtrl = TextEditingController(text: e?.einsatzEnde ?? '');
+    _einsatzBeginnCtrl.addListener(_berechnGesamtzeit);
+    _einsatzEndeCtrl.addListener(_berechnGesamtzeit);
     _gesamteZeitStundenCtrl = TextEditingController(
       text: (e?.gesamteEinsatzzeitStunden ?? 0) == 0
           ? ''
@@ -272,9 +276,7 @@ class _EinsatzFormScreenState extends State<EinsatzFormScreen>
     _datumBerichtCtrl = TextEditingController(
       text: e?.datumBericht ?? _today(),
     );
-    _unterschriftCtrl = TextEditingController(
-      text: e?.unterschrift ?? provider.standardEinsatzleiter,
-    );
+    _unterschriftBase64 = e?.unterschrift ?? '';
 
     if (e == null) {
       _setLfdNummer();
@@ -400,7 +402,6 @@ class _EinsatzFormScreenState extends State<EinsatzFormScreen>
       _bemerkungCtrl,
       _ortBerichtCtrl,
       _datumBerichtCtrl,
-      _unterschriftCtrl,
     ]) {
       c.dispose();
     }
@@ -500,7 +501,7 @@ class _EinsatzFormScreenState extends State<EinsatzFormScreen>
       bemerkung: _bemerkungCtrl.text.trim(),
       ortBericht: _ortBerichtCtrl.text.trim(),
       datumBericht: _datumBerichtCtrl.text.trim(),
-      unterschrift: _unterschriftCtrl.text.trim(),
+      unterschrift: _unterschriftBase64,
       createdAt: widget.einsatz?.createdAt ?? DateTime.now().toIso8601String(),
       fahrzeuge: _fahrzeuge,
       kameraden: _kameraden,
@@ -548,6 +549,31 @@ class _EinsatzFormScreenState extends State<EinsatzFormScreen>
         );
       }
     }
+  }
+
+  void _berechnGesamtzeit() {
+    final beginText = _einsatzBeginnCtrl.text;
+    final endeText = _einsatzEndeCtrl.text;
+    if (beginText.isEmpty || endeText.isEmpty) return;
+
+    final beginParts = beginText.split(':');
+    final endeParts = endeText.split(':');
+    if (beginParts.length != 2 || endeParts.length != 2) return;
+
+    final bh = int.tryParse(beginParts[0]);
+    final bm = int.tryParse(beginParts[1]);
+    final eh = int.tryParse(endeParts[0]);
+    final em = int.tryParse(endeParts[1]);
+    if (bh == null || bm == null || eh == null || em == null) return;
+
+    int diff = (eh * 60 + em) - (bh * 60 + bm);
+    if (diff < 0) diff += 24 * 60; // Einsatz über Mitternacht
+    if (diff == 0) return;
+
+    final stunden = diff ~/ 60;
+    final minuten = diff % 60;
+    _gesamteZeitStundenCtrl.text = stunden == 0 ? '' : '$stunden';
+    _gesamteZeitMinutenCtrl.text = minuten == 0 ? '' : '$minuten';
   }
 
   Future<void> _pickTime(TextEditingController ctrl) async {
@@ -904,6 +930,13 @@ class _EinsatzFormScreenState extends State<EinsatzFormScreen>
     int druckNach = 0;
     int dauer = 0;
     String zustand = 'Gut';
+    // Kameraden-Namen für Dropdown (ohne bereits eingetragene Atemschutzträger)
+    final kameradNamen = _kameraden
+        .map((k) => k.kameradName ?? '')
+        .where((n) => n.isNotEmpty)
+        .toList();
+    String? selectedKameradName =
+        kameradNamen.isNotEmpty ? null : null;
 
     await showDialog(
       context: context,
@@ -914,11 +947,30 @@ class _EinsatzFormScreenState extends State<EinsatzFormScreen>
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (kameradNamen.isNotEmpty)
+                  DropdownButtonFormField<String>(
+                    initialValue: selectedKameradName,
+                    decoration: const InputDecoration(
+                      labelText: 'Atemschutzträger (aus Kameraden)',
+                      border: OutlineInputBorder(),
+                    ),
+                    hint: const Text('Kamerad auswählen …'),
+                    items: kameradNamen
+                        .map((n) => DropdownMenuItem(value: n, child: Text(n)))
+                        .toList(),
+                    onChanged: (v) {
+                      setS(() => selectedKameradName = v);
+                      if (v != null) nameCtrl.text = v;
+                    },
+                  ),
+                if (kameradNamen.isNotEmpty) const SizedBox(height: 8),
                 TextFormField(
                   controller: nameCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Name des Trägers',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    labelText: kameradNamen.isNotEmpty
+                        ? 'Name (manuell anpassen)'
+                        : 'Name des Trägers',
+                    border: const OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 8),
@@ -2102,9 +2154,9 @@ class _EinsatzFormScreenState extends State<EinsatzFormScreen>
             ),
           ],
         ),
-        CustomTextField(
-          label: 'Unterschrift (Einsatzleiter)',
-          controller: _unterschriftCtrl,
+        _SignaturePadWidget(
+          base64Value: _unterschriftBase64,
+          onSaved: (b64) => setState(() => _unterschriftBase64 = b64),
         ),
         const SizedBox(height: 32),
         FilledButton.icon(
@@ -2193,3 +2245,118 @@ class _FahrzeugTile extends StatelessWidget {
     );
   }
 }
+
+// ─── Unterschrift-Pad ────────────────────────────────────────────────────────
+
+class _SignaturePadWidget extends StatelessWidget {
+  final String base64Value;
+  final ValueChanged<String> onSaved;
+
+  const _SignaturePadWidget({required this.base64Value, required this.onSaved});
+
+  Future<void> _openPad(BuildContext context) async {
+    final ctrl = SignatureController(
+      penStrokeWidth: 2.5,
+      penColor: Colors.black,
+      exportBackgroundColor: Colors.white,
+    );
+
+    await showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Unterschrift'),
+        content: SizedBox(
+          width: 500,
+          height: 200,
+          child: Signature(
+            controller: ctrl,
+            backgroundColor: Colors.grey.shade100,
+          ),
+        ),
+        actions: [
+          TextButton.icon(
+            onPressed: () => ctrl.clear(),
+            icon: const Icon(Icons.delete_outline),
+            label: const Text('Löschen'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Abbrechen'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              if (ctrl.isEmpty) {
+                Navigator.pop(ctx);
+                return;
+              }
+              final bytes = await ctrl.toPngBytes();
+              ctrl.dispose();
+              if (bytes != null) {
+                onSaved(base64Encode(bytes));
+              }
+              if (ctx.mounted) Navigator.pop(ctx);
+            },
+            child: const Text('Übernehmen'),
+          ),
+        ],
+      ),
+    );
+    if (ctrl.isNotEmpty) ctrl.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final hasSignature = base64Value.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          'Unterschrift (Einsatzleiter)',
+          style: TextStyle(fontSize: 12, color: Colors.black54),
+        ),
+        const SizedBox(height: 6),
+        GestureDetector(
+          onTap: () => _openPad(context),
+          child: Container(
+            height: 100,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.grey.shade400),
+              borderRadius: BorderRadius.circular(4),
+              color: Colors.grey.shade50,
+            ),
+            child: hasSignature
+                ? Image.memory(
+                    base64Decode(base64Value),
+                    fit: BoxFit.contain,
+                  )
+                : const Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.draw_outlined, color: Colors.grey),
+                        SizedBox(height: 4),
+                        Text(
+                          'Tippen zum Unterschreiben',
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+        ),
+        if (hasSignature)
+          Align(
+            alignment: Alignment.centerRight,
+            child: TextButton.icon(
+              onPressed: () => onSaved(''),
+              icon: const Icon(Icons.delete_outline, size: 16),
+              label: const Text('Unterschrift löschen'),
+            ),
+          ),
+      ],
+    );
+  }
+}
+

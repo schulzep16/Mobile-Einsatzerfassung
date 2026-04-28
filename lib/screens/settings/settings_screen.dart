@@ -1,5 +1,6 @@
 // lib/screens/settings/settings_screen.dart
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import '../../providers/app_provider.dart';
 import '../../widgets/custom_text_field.dart';
@@ -15,6 +16,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _feuerwehrCtrl;
   late TextEditingController _einsatzleiterCtrl;
+  String _appVersion = '';
 
   @override
   void initState() {
@@ -22,6 +24,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final p = context.read<AppProvider>();
     _feuerwehrCtrl = TextEditingController(text: p.feuerwehrName);
     _einsatzleiterCtrl = TextEditingController(text: p.standardEinsatzleiter);
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) setState(() => _appVersion = '${info.version}+${info.buildNumber}');
+    });
   }
 
   @override
@@ -111,6 +116,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 32),
+            if (_appVersion.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Text(
+                  'Version $_appVersion',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
+                ),
+              ),
             FilledButton.icon(
               onPressed: _save,
               icon: const Icon(Icons.save),
