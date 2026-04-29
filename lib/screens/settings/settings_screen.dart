@@ -25,7 +25,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _feuerwehrCtrl = TextEditingController(text: p.feuerwehrName);
     _einsatzleiterCtrl = TextEditingController(text: p.standardEinsatzleiter);
     PackageInfo.fromPlatform().then((info) {
-      if (mounted) setState(() => _appVersion = '${info.version}+${info.buildNumber}');
+      final v = info.version.isNotEmpty ? info.version : '1.0.0';
+      final b = info.buildNumber.isNotEmpty ? info.buildNumber : '1';
+      if (mounted) setState(() => _appVersion = '$v+$b');
+    }).catchError((_) {
+      if (mounted) setState(() => _appVersion = '1.0.0+1');
     });
   }
 
@@ -116,15 +120,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 32),
-            if (_appVersion.isNotEmpty)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: Text(
-                  'Version $_appVersion',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
-                ),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                _appVersion.isNotEmpty ? 'Version $_appVersion' : 'Version wird geladen…',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.grey.shade500, fontSize: 12),
               ),
+            ),
             FilledButton.icon(
               onPressed: _save,
               icon: const Icon(Icons.save),
